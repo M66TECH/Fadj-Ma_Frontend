@@ -26,7 +26,6 @@ class ServiceAPI {
     const t = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (t) this.token = t;
 
-    // synchronisation multi-onglet: si un autre onglet nettoie le token
     if (!this.storageListenerInit) {
       this.storageListenerInit = true;
       window.addEventListener('storage', (e) => {
@@ -49,7 +48,6 @@ class ServiceAPI {
     const endpointPath = endpoint.replace(/^\/+/, '');
     const url = `${URL_BASE_API}/${endpointPath}`;
 
-    // Met à jour l'horodatage d'activité pour l'inactivité
     try { localStorage.setItem(LAST_ACTIVE_AT_KEY, String(Date.now())); } catch {}
 
     const isFormData = (options as any)?.body instanceof FormData;
@@ -63,9 +61,15 @@ class ServiceAPI {
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     }
 
+    // Timeout via AbortController
+    const timeoutMs = (options as any)?.timeoutMs ?? 15000; // 15s par défaut
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort('timeout'), timeoutMs);
+
     const config: RequestInit = {
       ...options,
       headers,
+      signal: controller.signal,
     };
 
     const method = (options as any)?.method || 'GET';
@@ -81,19 +85,39 @@ class ServiceAPI {
             ? (() => { try { return JSON.stringify((options as any).body).slice(0, 500); } catch { return '[unserializable-body]'; } })()
             : undefined);
 
-    console.debug('[API REQUEST]', { url, method, headers: safeHeaders, bodyPreview });
+    // Réduire le bruit de logs en prod
+    if (import.meta.env.DEV) {
+      console.debug('[API REQUEST]', { url, method, headers: safeHeaders, bodyPreview });
+    }
 
-    const reponse = await fetch(url, config);
+    let reponse: Response;
+    try {
+      reponse = await fetch(url, config);
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e?.name === 'AbortError' || e === 'timeout') {
+        const err: any = new Error('Délai de la requête dépassé');
+        err.status = 0;
+        err.url = url;
+        err.method = method;
+        throw err;
+      }
+      throw e;
+    }
+
+    clearTimeout(timeoutId);
 
     let payload: any = null;
     try {
       payload = await reponse.json();
     } catch {}
 
-    try {
-      const preview = typeof payload === 'object' ? JSON.stringify(payload).slice(0, 1000) : String(payload);
-      console.debug('[API RESPONSE]', { url, status: reponse.status, ok: reponse.ok, payloadPreview: preview });
-    } catch {}
+    if (import.meta.env.DEV) {
+      try {
+        const preview = typeof payload === 'object' ? JSON.stringify(payload).slice(0, 1000) : String(payload);
+        console.debug('[API RESPONSE]', { url, status: reponse.status, ok: reponse.ok, payloadPreview: preview });
+      } catch {}
+    }
 
     if (!reponse.ok) {
       const message = payload?.message || `Erreur API: ${reponse.status}`;
@@ -104,12 +128,9 @@ class ServiceAPI {
       err.url = url;
       err.method = (options as any)?.method || 'GET';
 
-      // Garde: si non autorisé, on nettoie le token et on notifie l'app
       if ([401, 403, 419].includes(reponse.status)) {
         this.definirToken(null);
-        try {
-          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
-        } catch {}
+        try { window.dispatchEvent(new CustomEvent('auth:unauthorized')); } catch {}
       }
 
       throw err;
@@ -135,12 +156,11 @@ class ServiceAPI {
       nom: donnees?.nom ?? donnees?.name ?? '',
       email: donnees?.email,
       password: donnees?.password,
-      // Compat: certains backends attendent confirm_password
       password_confirmation:
         donnees?.password_confirmation ?? donnees?.confirm_password ?? donnees?.passwordConfirm ?? '',
       confirm_password:
         donnees?.confirm_password ?? donnees?.password_confirmation ?? donnees?.passwordConfirm ?? '',
-      role: donnees?.role ?? 'employe',
+      role: donnees?.role ?? 'admin',
     };
 
     const res = await this.faireRequete<{ success: boolean; data?: { token: string } }>('register', {
@@ -164,7 +184,6 @@ class ServiceAPI {
   }
 
   async obtenirProfil() {
-    // Typage souple: le backend peut renvoyer { success, data: { user } } ou { success, data }
     const res = await this.faireRequete<any>('me');
     // Essaye de normaliser la forme
     const data = res?.data ?? res;
@@ -224,7 +243,6 @@ class ServiceAPI {
       err.payload = payload;
       err.url = url;
       err.method = 'GET';
-      // Gestion auth: aligner avec faireRequete
       if ([401, 403, 419].includes(res.status)) {
         this.definirToken(null);
         try { window.dispatchEvent(new CustomEvent('auth:unauthorized')); } catch {}

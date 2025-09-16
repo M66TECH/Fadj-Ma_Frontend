@@ -147,10 +147,15 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
   );
 
   const gererCreationMedicament = async (donneesMedicament: any) => {
-    // Trace les données brutes venant du formulaire
-    console.log('[MEDICAMENT/CREATE] formData', donneesMedicament);
+    // Validation côté client pour éviter 422 (ex: dosage trop long)
+    const dosageStr = String(donneesMedicament?.dosage ?? '').trim();
+    if (dosageStr.length > 255) {
+      alert('Le champ "Dosage" est trop long (max 255 caractères).');
+      return;
+    }
+
     try {
-      // Création via API
+      // Création via API (sans images)
       const payload: any = {
         nom: donneesMedicament?.nom,
         description: donneesMedicament?.description,
@@ -161,12 +166,31 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
       if (donneesMedicament?.groupe_id) {
         payload.groupe_id = String(donneesMedicament.groupe_id);
       }
-      console.log('[MEDICAMENT/CREATE] payload', payload);
       const resCreate = await apiService.creerMedicament(payload);
-      console.log('[MEDICAMENT/CREATE] api response', resCreate);
+
+      // Récupérer l'ID créé pour upload d'images
+      const createdData: any = (resCreate as any)?.data ?? resCreate;
+      const createdId = String(
+        (createdData && (createdData.id ?? createdData._id ?? createdData.code ?? createdData.medicament?.id ?? createdData.item?.id)) || ''
+      );
+
+      // Upload image principale et galerie si présentes
+      try {
+        if (createdId && donneesMedicament?.image instanceof File) {
+          await apiService.uploadImageMedicament(createdId, donneesMedicament.image);
+        }
+        if (createdId && Array.isArray(donneesMedicament?.gallery) && donneesMedicament.gallery.length > 1) {
+          const others = donneesMedicament.gallery.slice(1);
+          if (others.length) {
+            await apiService.uploadGalerieMedicament(createdId, others);
+          }
+        }
+      } catch (imgErr) {
+        // ignore upload errors, we still refresh list
+      }
+
       // Recharger la liste
       const res = await apiService.obtenirMedicaments();
-      console.log('[MEDICAMENT/LIST] api response', res);
       const items = (res as any)?.data ?? [];
       const mapped = (Array.isArray(items) ? items : []).map((m: any) => ({
         id: String(m.id ?? m._id ?? m.code ?? Math.random()),
@@ -182,14 +206,6 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
       setTotalPages(Math.max(1, Math.ceil(mapped.length / 8)));
       setAfficherModal(false);
     } catch (error: any) {
-      console.error('[MEDICAMENT/CREATE] error', {
-        message: error?.message,
-        status: error?.status,
-        url: error?.url,
-        method: error?.method,
-        payload: error?.payload,
-        errors: error?.errors,
-      });
       alert(`Erreur lors de la création: ${error?.message || 'Inconnue'}`);
     }
   };

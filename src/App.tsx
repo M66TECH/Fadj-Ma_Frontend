@@ -9,6 +9,7 @@ import ReportsPage from './pages/ReportsPage';
 import ConfigurationPage from './pages/ConfigurationPage';
 import UsersPage from './pages/UsersPage';
 import ClientsPage from './pages/ClientsPage';
+import ProfilePage from './pages/ProfilePage';
 import type { PageName } from './types';
 
 function App() {
@@ -77,6 +78,8 @@ function App() {
         return <UsersPage onNaviguer={naviguerVers} />;
       case 'clients':
         return <ClientsPage onNaviguer={naviguerVers} />;
+      case 'profil':
+        return <ProfilePage onNaviguer={naviguerVers} />;
       default:
         return <TableauDeBord onNaviguer={naviguerVers} />;
     }

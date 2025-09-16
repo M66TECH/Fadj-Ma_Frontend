@@ -7,6 +7,7 @@ export type PageName =
   | 'rapports'
   | 'configuration'
   | 'utilisateurs'
+  | 'profil'
   | 'clients';
 
 export interface User {
