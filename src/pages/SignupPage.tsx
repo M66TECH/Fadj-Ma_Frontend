@@ -46,9 +46,13 @@ const PageInscription: React.FC<PropsPageInscription> = ({ onAllerConnexion }) =
 
     setLoading(true);
     try {
-      await api.sInscrire(payload);
+      await api.sInscrire(payload as any);
       onAllerConnexion();
     } catch (e: any) {
+      if (e?.status === 0 && /Délai/.test(String(e?.message))) {
+        setError("Le serveur met trop de temps à répondre. Réessayez plus tard.");
+        return;
+      }
       // Afficher les erreurs de validation Laravel si présentes
       const errs = e?.errors;
       if (errs && typeof errs === 'object') {
@@ -63,7 +67,6 @@ const PageInscription: React.FC<PropsPageInscription> = ({ onAllerConnexion }) =
       }
     } finally {
       setLoading(false);
-      console.log('[SIGNUP DONE]');
     }
   };
 
@@ -74,17 +77,7 @@ const PageInscription: React.FC<PropsPageInscription> = ({ onAllerConnexion }) =
         <div className="bg-gray-800 text-white text-center py-6">
           <h1 className="text-xl font-bold">Bienvenue chez votre pharmacie</h1>
           <div className="flex justify-center items-center space-x-2 mt-2">
-            <div className="w-8 h-8 bg-[#F1C40F] rounded-md flex items-center justify-center ring-1 ring-black/15" aria-hidden>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3 6h2l1.1 6.6c.1.6.6 1 1.2 1h8.6c.6 0 1.1-.4 1.3-1l1.8-5.6H7.4" stroke="#000" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                <circle cx="9" cy="18.5" r="1.7" fill="#000"/>
-                <circle cx="16.8" cy="18.5" r="1.7" fill="#000"/>
-                <rect x="9.4" y="5.4" width="6.4" height="4.6" rx="0.8" fill="#2ECC71" stroke="#000" strokeWidth="1.2"/>
-                <rect x="10.8" y="4.4" width="3.6" height="1.2" rx="0.4" fill="#2ECC71" stroke="#000" strokeWidth="1"/>
-                <rect x="12.4" y="6.3" width="0.9" height="2.8" fill="#FFFFFF"/>
-                <rect x="11.3" y="7.4" width="3.1" height="0.9" fill="#FFFFFF"/>
-              </svg>
-            </div>
+            <img src="/assets/app-icon.png" alt="Fadj-Ma" className="w-8 h-8 rounded-md ring-1 ring-black/15" />
             <span className="font-semibold text-lg">Fadj-Ma</span>
           </div>
         </div>

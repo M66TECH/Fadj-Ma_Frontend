@@ -17,11 +17,19 @@ const Layout: React.FC<PropsLayout> = ({ enfants, pageActuelle, onNaviguer }) =>
 
   React.useEffect(() => {
     let mounted = true;
-    // Charger profil après connexion
+    // Charger profil après connexion — sans forcer la déconnexion si 401
     (async () => {
       try {
-        const data = await (await import('../services/api')).default.obtenirProfil();
-        if (mounted) setProfil(data?.user ?? data); // support { user } ou direct
+        const RAW = (import.meta as any).env?.VITE_API_BASE_URL || 'https://fadj-ma-backend-u749.onrender.com/api';
+        const BASE = String(RAW).replace(/\/+$/, '');
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch(`${BASE}/me`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return; // ne pas propager => évite déconnexion immédiate
+        const payload: any = await res.json().catch(() => null);
+        const data = payload?.data ?? payload;
+        if (mounted) setProfil(data?.user ?? data);
       } catch {
         // ignorer les erreurs silencieusement, profil restera null
       }

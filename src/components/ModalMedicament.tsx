@@ -11,7 +11,8 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
     dosage: '',
     description: '',
     prix: '',
-    image: null as File | null
+    image: null as File | null,
+    gallery: [] as File[],
   });
 
   const gererChangementInput = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -23,17 +24,19 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
   };
 
   const gererChangementImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setDonneesFormulaire(prev => ({
-        ...prev,
-        image: e.target.files![0]
-      }));
-    }
+    const files = e.target.files;
+    if (!files) return;
+    const premier = files[0] || null;
+    const multiples = Array.from(files);
+    setDonneesFormulaire(prev => ({
+      ...prev,
+      image: premier,
+      gallery: multiples,
+    }));
   };
 
   const gererSoumission = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[MODAL] submit', donneesFormulaire);
     onSauvegarder(donneesFormulaire);
   };
 
@@ -50,6 +53,7 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
             <input
               type="file"
               accept="image/*"
+              multiple
               onChange={gererChangementImage}
               className="image-input-fadj"
             />
@@ -100,6 +104,7 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
                   onChange={gererChangementInput}
                   placeholder="Dosage"
                   className="form-input-fadj"
+                  maxLength={255}
                 />
               </div>
               <div className="form-group-fadj">

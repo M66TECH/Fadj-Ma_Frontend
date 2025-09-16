@@ -3,6 +3,32 @@ import apiService from '../services/api';
 
 import type { PageName } from '../types';
 
+// Compteur dynamique d'utilisateurs (ne déconnecte pas sur 401)
+const UsersCount: React.FC = () => {
+  const [count, setCount] = React.useState<string>('—');
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const RAW = (import.meta as any).env?.VITE_API_BASE_URL || 'https://fadj-ma-backend-u749.onrender.com/api';
+        const BASE = String(RAW).replace(/\/+$/, '');
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch(`${BASE}/users`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) { if (mounted) setCount('—'); return; }
+        const payload: any = await res.json().catch(() => null);
+        const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : payload?.items ?? [];
+        if (mounted) setCount(String((list?.length ?? 0)).padStart(2, '0'));
+      } catch {
+        if (mounted) setCount('—');
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+  return <>{count}</>;
+};
+
 interface TableauDeBordProps {
   onNaviguer: (page: PageName) => void;
 }
@@ -247,7 +273,10 @@ const TableauDeBord: React.FC<TableauDeBordProps> = ({ onNaviguer }) => {
               <p className="text-gray-500 text-sm">Nombre total de fournisseurs</p>
             </div>
             <div>
-              <p className="text-3xl font-bold text-[#2c3e50]">05</p>
+              <p className="text-3xl font-bold text-[#2c3e50]">{/* Compteur dynamique d'utilisateurs */}
+                {/* On ne dispose pas d'un endpoint de stats pour users ici, donc on tente un fetch rapide côté client. */}
+                <UsersCount />
+              </p>
               <p className="text-gray-500 text-sm">Nombre total d'utilisateurs</p>
             </div>
           </div>
