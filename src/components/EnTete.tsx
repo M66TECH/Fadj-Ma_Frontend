@@ -1,13 +1,18 @@
 import React from 'react';
 
 const EnTete: React.FC = () => {
-  const dateActuelle = new Date();
-  const dateFormatee = dateActuelle.toLocaleDateString('fr-FR', {
+  const [now, setNow] = React.useState(new Date());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dateFormatee = now.toLocaleDateString('fr-FR', {
     day: 'numeric',
     month: 'long',
     year: 'numeric'
   });
-  const heureFormatee = dateActuelle.toLocaleTimeString('fr-FR', {
+  const heureFormatee = now.toLocaleTimeString('fr-FR', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'

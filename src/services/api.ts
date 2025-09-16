@@ -2,27 +2,55 @@ const RAW_BASE_API = import.meta.env.VITE_API_BASE_URL || 'https://fadj-ma-backe
 const URL_BASE_API = RAW_BASE_API.replace(/\/+$/, '');
 
 const TOKEN_STORAGE_KEY = 'auth_token';
+const TOKEN_SET_AT_KEY = 'auth_set_at';
+const LAST_ACTIVE_AT_KEY = 'auth_last_active';
 
 class ServiceAPI {
   private token: string | null = null;
+  private storageListenerInit = false;
 
   definirToken(token: string | null) {
     this.token = token;
     if (token) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      localStorage.setItem(TOKEN_SET_AT_KEY, String(Date.now()));
+      localStorage.setItem(LAST_ACTIVE_AT_KEY, String(Date.now()));
     } else {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_SET_AT_KEY);
+      localStorage.removeItem(LAST_ACTIVE_AT_KEY);
     }
   }
 
   initDepuisStorage() {
     const t = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (t) this.token = t;
+
+    // synchronisation multi-onglet: si un autre onglet nettoie le token
+    if (!this.storageListenerInit) {
+      this.storageListenerInit = true;
+      window.addEventListener('storage', (e) => {
+        if (e.key === TOKEN_STORAGE_KEY) {
+          const nv = localStorage.getItem(TOKEN_STORAGE_KEY);
+          this.token = nv;
+          if (!nv) {
+            try { window.dispatchEvent(new CustomEvent('auth:unauthorized')); } catch {}
+          }
+        }
+      });
+    }
+  }
+
+  estAuthentifie() {
+    return !!this.token;
   }
 
   private async faireRequete<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const endpointPath = endpoint.replace(/^\/+/, '');
     const url = `${URL_BASE_API}/${endpointPath}`;
+
+    // Met à jour l'horodatage d'activité pour l'inactivité
+    try { localStorage.setItem(LAST_ACTIVE_AT_KEY, String(Date.now())); } catch {}
 
     const isFormData = (options as any)?.body instanceof FormData;
 
@@ -40,28 +68,31 @@ class ServiceAPI {
       headers,
     };
 
-    // Log non-sensible de la requête
-    try {
-      const safeBody = isFormData
-        ? '[FormData]'
-        : (() => {
-            try {
-              const b = (options as any)?.body ? JSON.parse((options as any).body as string) : undefined;
-              if (b && b.password) b.password = '[masked]';
-              if (b && b.password_confirmation) b.password_confirmation = '[masked]';
-              return JSON.stringify(b);
-            } catch {
-              return '[non-JSON body]';
-            }
-          })();
-      console.log('[API REQUEST]', { url, method: (options as any)?.method || 'GET', headers, body: safeBody });
-    } catch {}
+    const method = (options as any)?.method || 'GET';
+    const safeHeaders = {
+      ...headers,
+      ...(headers.Authorization ? { Authorization: 'Bearer <redacted>' } : {}),
+    } as Record<string, string>;
+    const bodyPreview = isFormData
+      ? '[form-data]'
+      : (typeof (options as any)?.body === 'string'
+          ? (options as any).body
+          : (options as any)?.body
+            ? (() => { try { return JSON.stringify((options as any).body).slice(0, 500); } catch { return '[unserializable-body]'; } })()
+            : undefined);
+
+    console.debug('[API REQUEST]', { url, method, headers: safeHeaders, bodyPreview });
 
     const reponse = await fetch(url, config);
 
     let payload: any = null;
     try {
       payload = await reponse.json();
+    } catch {}
+
+    try {
+      const preview = typeof payload === 'object' ? JSON.stringify(payload).slice(0, 1000) : String(payload);
+      console.debug('[API RESPONSE]', { url, status: reponse.status, ok: reponse.ok, payloadPreview: preview });
     } catch {}
 
     if (!reponse.ok) {
@@ -72,13 +103,17 @@ class ServiceAPI {
       err.payload = payload;
       err.url = url;
       err.method = (options as any)?.method || 'GET';
-      // Log de l'erreur
-      console.error('[API ERROR]', { url, status: reponse.status, payload: err.payload, errors: err.errors });
+
+      // Garde: si non autorisé, on nettoie le token et on notifie l'app
+      if ([401, 403, 419].includes(reponse.status)) {
+        this.definirToken(null);
+        try {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        } catch {}
+      }
+
       throw err;
     }
-
-    // Log succès (limité)
-    console.log('[API SUCCESS]', { url });
 
     return payload as T;
   }
@@ -96,7 +131,6 @@ class ServiceAPI {
 
   async sInscrire(donnees: any) {
     const payload = {
-      // Compat: le backend semble attendre "nom"; on envoie les deux
       name: donnees?.name ?? donnees?.nom ?? '',
       nom: donnees?.nom ?? donnees?.name ?? '',
       email: donnees?.email,
@@ -130,11 +164,109 @@ class ServiceAPI {
   }
 
   async obtenirProfil() {
-    return this.faireRequete('me');
+    // Typage souple: le backend peut renvoyer { success, data: { user } } ou { success, data }
+    const res = await this.faireRequete<any>('me');
+    // Essaye de normaliser la forme
+    const data = res?.data ?? res;
+    return data;
   }
 
   async obtenirStatistiques() {
     return this.faireRequete('stats');
+  }
+
+  // ===== Dashboard =====
+  async obtenirDashboard() {
+    return this.faireRequete('dashboard');
+  }
+
+  async obtenirStatsParPeriode(params: { periode: 'jour' | 'semaine' | 'mois' | 'annee'; mois?: number; annee?: number; }) {
+    const q = new URLSearchParams();
+    q.set('periode', params.periode);
+    if (params.mois) q.set('mois', String(params.mois));
+    if (params.annee) q.set('annee', String(params.annee));
+    return this.faireRequete(`dashboard/stats-by-period?${q.toString()}`);
+  }
+
+  async obtenirRapportRevenus(params: { mois: number; annee: number }) {
+    const q = new URLSearchParams({ mois: String(params.mois), annee: String(params.annee) });
+    return this.faireRequete(`dashboard/rapport-revenus?${q.toString()}`);
+  }
+
+  async telechargerRapportDashboard(): Promise<Blob> {
+    // Récupère un rapport binaire (PDF/ZIP)
+    const url = `${URL_BASE_API}/dashboard/telecharger-rapport`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: this.token ? { Authorization: `Bearer ${this.token}` } : undefined,
+    });
+    if (!res.ok) throw new Error(`Erreur téléchargement: ${res.status}`);
+    return await res.blob();
+  }
+
+  // ===== Rapports (PDF) =====
+  private async telechargerBinaire(pathWithQs: string): Promise<{ blob: Blob; filename?: string; contentType?: string }> {
+    const endpointPath = pathWithQs.replace(/^\/+/, '');
+    const url = `${URL_BASE_API}/${endpointPath}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: this.token ? { Authorization: `Bearer ${this.token}` } : undefined,
+    });
+    const contentType = res.headers.get('content-type') || undefined;
+
+    if (!res.ok) {
+      let payload: any = null;
+      if (contentType?.includes('application/json')) {
+        try { payload = await res.json(); } catch {}
+      }
+      const err: any = new Error(payload?.message || `Erreur API: ${res.status}`);
+      err.status = res.status;
+      err.payload = payload;
+      err.url = url;
+      err.method = 'GET';
+      // Gestion auth: aligner avec faireRequete
+      if ([401, 403, 419].includes(res.status)) {
+        this.definirToken(null);
+        try { window.dispatchEvent(new CustomEvent('auth:unauthorized')); } catch {}
+      }
+      throw err;
+    }
+
+    const cd = res.headers.get('content-disposition') || '';
+    const match = cd.match(/filename=\"?([^\";]+)\"?/i);
+    const filename = match?.[1];
+    const blob = await res.blob();
+    return { blob, filename, contentType };
+  }
+
+  async telechargerRapportInventaire(): Promise<{ blob: Blob; filename?: string }> {
+    return this.telechargerBinaire('rapports/inventaire');
+  }
+
+  async telechargerRapportVentes(params?: { date_debut?: string; date_fin?: string; client_id?: string }): Promise<{ blob: Blob; filename?: string }> {
+    const q = new URLSearchParams();
+    if (params?.date_debut) q.set('date_debut', params.date_debut);
+    if (params?.date_fin) q.set('date_fin', params.date_fin);
+    if (params?.client_id) q.set('client_id', params.client_id);
+    const qs = q.toString();
+    return this.telechargerBinaire(`rapports/ventes${qs ? `?${qs}` : ''}`);
+  }
+
+  async telechargerRapportFinancier(params?: { mois?: number; annee?: number }): Promise<{ blob: Blob; filename?: string }> {
+    const q = new URLSearchParams();
+    if (typeof params?.mois === 'number') q.set('mois', String(params.mois));
+    if (typeof params?.annee === 'number') q.set('annee', String(params.annee));
+    const qs = q.toString();
+    return this.telechargerBinaire(`rapports/financier${qs ? `?${qs}` : ''}`);
+  }
+
+  async getRapportCommandes(params?: { date_debut?: string; date_fin?: string; fournisseur_id?: string }) {
+    const q = new URLSearchParams();
+    if (params?.date_debut) q.set('date_debut', params.date_debut);
+    if (params?.date_fin) q.set('date_fin', params.date_fin);
+    if (params?.fournisseur_id) q.set('fournisseur_id', params.fournisseur_id);
+    const qs = q.toString();
+    return this.faireRequete(`rapports/commandes${qs ? `?${qs}` : ''}`);
   }
 
   // ===== Recherche =====
@@ -216,6 +348,58 @@ class ServiceAPI {
   // ===== Groupes =====
   async obtenirGroupes() {
     return this.faireRequete('groupes-medicaments');
+  }
+
+  // ===== Clients =====
+  async obtenirClients(params?: { search?: string }) {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    const qs = q.toString();
+    return this.faireRequete(`clients${qs ? `?${qs}` : ''}`);
+  }
+
+  async creerClient(donnees: { nom?: string; email?: string; telephone?: string }) {
+    return this.faireRequete('clients', {
+      method: 'POST',
+      body: JSON.stringify(donnees),
+    });
+  }
+
+  async modifierClient(id: string, donnees: { nom?: string; email?: string; telephone?: string }) {
+    return this.faireRequete(`clients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(donnees),
+    });
+  }
+
+  async supprimerClient(id: string) {
+    return this.faireRequete(`clients/${id}`, { method: 'DELETE' });
+  }
+
+  // ===== Utilisateurs =====
+  async obtenirUtilisateurs(params?: { search?: string }) {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    const qs = q.toString();
+    return this.faireRequete(`users${qs ? `?${qs}` : ''}`);
+  }
+
+  async creerUtilisateur(donnees: any) {
+    return this.faireRequete('users', {
+      method: 'POST',
+      body: JSON.stringify(donnees),
+    });
+  }
+
+  async modifierUtilisateur(id: string, donnees: any) {
+    return this.faireRequete(`users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(donnees),
+    });
+  }
+
+  async supprimerUtilisateur(id: string) {
+    return this.faireRequete(`users/${id}`, { method: 'DELETE' });
   }
 }
 

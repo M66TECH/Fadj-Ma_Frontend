@@ -2,12 +2,21 @@ import React from 'react';
 
 import type { PageName } from '../types';
 
+import type { UserProfile } from '../types';
+
 interface PropsBarreLaterale {
   pageActuelle: PageName;
   onNaviguer: (page: PageName) => void;
+  profil?: UserProfile; // informations du profil connecté
 }
 
-const BarreLaterale: React.FC<PropsBarreLaterale> = ({ pageActuelle, onNaviguer }) => {
+const BarreLaterale: React.FC<PropsBarreLaterale> = ({ pageActuelle, onNaviguer, profil }) => {
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('auth_token');
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    } catch {}
+  };
   return (
     <aside className="w-64 bg-[#1E1E2D] text-white flex flex-col justify-between">
       <div>
@@ -36,14 +45,38 @@ const BarreLaterale: React.FC<PropsBarreLaterale> = ({ pageActuelle, onNaviguer 
         {/* User profile: avatar at left, name/role at right, more menu at far right */}
         <div className="px-4 py-4 border-b border-[#2C2C3A]">
           <div className="flex items-center gap-3">
-            <img
-              src="https://via.placeholder.com/64"
-              alt="Modou Fall"
-              className="w-12 h-12 rounded-full object-cover border-2 border-[#2C2C3A]"
-            />
+            {/* Avatar dynamique avec fallback */}
+            {(() => {
+              const photo = profil?.photo_url || profil?.avatar_url || profil?.image_url;
+              const altName = profil?.name || [profil?.prenom, profil?.nom].filter(Boolean).join(' ') || 'Utilisateur';
+              if (photo) {
+                return (
+                  <img
+                    src={photo}
+                    alt={altName}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-[#2C2C3A]"
+                  />
+                );
+              }
+              // Avatar par défaut (initiales)
+              const initials = (altName || '')
+                .split(' ')
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(s => s[0]?.toUpperCase())
+                .join('') || 'U';
+              return (
+                <div className="w-12 h-12 rounded-full bg-[#2C2C3A] border-2 border-[#2C2C3A] flex items-center justify-center text-white font-semibold">
+                  {initials}
+                </div>
+              );
+            })()}
+
             <div className="flex-1 min-w-0">
-              <div className="text-white font-semibold truncate">Modou Fall</div>
-              <div className="text-[#2ECC71] text-sm">Administrateur</div>
+              <div className="text-white font-semibold truncate">
+                {profil?.name || [profil?.prenom, profil?.nom].filter(Boolean).join(' ') || 'Utilisateur'}
+              </div>
+              <div className="text-[#2ECC71] text-sm">{profil?.role || 'Utilisateur'}</div>
             </div>
             <span className="material-icons text-gray-400">more_vert</span>
           </div>
@@ -75,7 +108,7 @@ const BarreLaterale: React.FC<PropsBarreLaterale> = ({ pageActuelle, onNaviguer 
 
       {/* Footer */}
       <div className="px-4 py-4 text-sm text-gray-400 border-t border-[#2C2C3A]">
-        <button className="flex items-center gap-2 hover:text-white cursor-pointer">
+        <button onClick={handleLogout} className="flex items-center gap-2 hover:text-white cursor-pointer">
           <span className="material-icons">logout</span>
           Déconnexion
         </button>

@@ -16,6 +16,19 @@ export interface User {
   role: 'admin' | 'user';
 }
 
+// Profil utilisateur reçu depuis l'API (flexible selon backend)
+export interface UserProfile {
+  id?: string;
+  prenom?: string;
+  nom?: string;
+  name?: string;
+  email?: string;
+  role?: string; // ex: 'admin', 'employe'
+  photo_url?: string;
+  avatar_url?: string;
+  image_url?: string;
+}
+
 export interface Medicament {
   id: string;
   nom: string;
@@ -23,7 +36,7 @@ export interface Medicament {
   dosage: string;
   prix: number;
   stock: number;
-  groupe_id: string;
+  groupe_id: string | null;
   image_path?: string;
   groupe?: GroupeMedicament;
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Medicament } from '../types';
 import ModalMedicament from '../components/ModalMedicament';
+import apiService from '../services/api';
 
 import type { PageName } from '../types';
 
@@ -12,12 +13,13 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
   const [medicaments, setMedicaments] = useState<Medicament[]>([]);
   const [termeRecherche, setTermeRecherche] = useState('');
   const [groupeSelectionne, setGroupeSelectionne] = useState('');
+  const [groupes, setGroupes] = useState<{ id: string; nom: string }[]>([]);
   const [afficherModal, setAfficherModal] = useState(false);
   const [pageActuelle, setPageActuelle] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Données de test basées sur les captures
-  const medicamentsTest: Medicament[] = [
+  // Données de test basées sur les captures (supprimées pour API)
+  /* const medicamentsTest: Medicament[] = [
     {
       id: 'D06ID232435454',
       nom: 'Augmentin 625 Duo Comprimé',
@@ -98,22 +100,39 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
       groupe_id: '1',
       groupe: { id: '1', nom: 'Médecine générique' }
     }
-  ];
+  ]; */
 
   useEffect(() => {
-    const chargerMedicaments = async () => {
+    const charger = async () => {
       try {
-        // TODO: remplacer par api.obtenirMedicaments() une fois auth en place
-        // const res = await apiService.obtenirMedicaments();
-        // const items = (res as any).data ?? [];
-        // setMedicaments(items);
-        setMedicaments(medicamentsTest);
-        setTotalPages(Math.ceil(medicamentsTest.length / 8));
-      } catch (error) {
-        console.error('Erreur lors du chargement des médicaments:', error);
+        const [resMed, resGrp] = await Promise.all([
+          apiService.obtenirMedicaments(),
+          apiService.obtenirGroupes(),
+        ]);
+        const items = (resMed as any)?.data ?? [];
+        const mapped = (Array.isArray(items) ? items : []).map((m: any) => ({
+          id: String(m.id ?? m._id ?? m.code ?? Math.random()),
+          nom: m.nom ?? m.name ?? 'Inconnu',
+          description: m.description ?? '',
+          dosage: m.dosage ?? '',
+          prix: Number(m.prix ?? m.price ?? 0),
+          stock: Number(m.stock ?? 0),
+          groupe_id: m.groupe_id != null ? String(m.groupe_id) : (m.groupe?.id != null ? String(m.groupe.id) : null),
+          groupe: m.groupe ? { id: String(m.groupe.id), nom: m.groupe.nom ?? 'Groupe' } : undefined,
+        })) as any;
+        setMedicaments(mapped);
+        setTotalPages(Math.max(1, Math.ceil(mapped.length / 8)));
+
+        const gs = (resGrp as any)?.data ?? [];
+        const mappedGroupes = (Array.isArray(gs) ? gs : []).map((g: any) => ({ id: String(g.id), nom: g.nom ?? g.name ?? 'Groupe' }));
+        setGroupes(mappedGroupes);
+      } catch {
+        setMedicaments([]);
+        setTotalPages(1);
+        setGroupes([]);
       }
     };
-    chargerMedicaments();
+    charger();
   }, []);
 
   const medicamentsFiltres = medicaments.filter(med => {
@@ -128,15 +147,57 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
   );
 
   const gererCreationMedicament = async (donneesMedicament: any) => {
+    // Trace les données brutes venant du formulaire
+    console.log('[MEDICAMENT/CREATE] formData', donneesMedicament);
     try {
-      console.log('Création du médicament:', donneesMedicament);
+      // Création via API
+      const payload: any = {
+        nom: donneesMedicament?.nom,
+        description: donneesMedicament?.description,
+        dosage: donneesMedicament?.dosage,
+        prix: Number(donneesMedicament?.prix ?? 0),
+        stock: Number(donneesMedicament?.stock ?? 0),
+      };
+      if (donneesMedicament?.groupe_id) {
+        payload.groupe_id = String(donneesMedicament.groupe_id);
+      }
+      console.log('[MEDICAMENT/CREATE] payload', payload);
+      const resCreate = await apiService.creerMedicament(payload);
+      console.log('[MEDICAMENT/CREATE] api response', resCreate);
+      // Recharger la liste
+      const res = await apiService.obtenirMedicaments();
+      console.log('[MEDICAMENT/LIST] api response', res);
+      const items = (res as any)?.data ?? [];
+      const mapped = (Array.isArray(items) ? items : []).map((m: any) => ({
+        id: String(m.id ?? m._id ?? m.code ?? Math.random()),
+        nom: m.nom ?? m.name ?? 'Inconnu',
+        description: m.description ?? '',
+        dosage: m.dosage ?? '',
+        prix: Number(m.prix ?? m.price ?? 0),
+        stock: Number(m.stock ?? 0),
+        groupe_id: String(m.groupe_id ?? m.groupe?.id ?? ''),
+        groupe: m.groupe ? { id: String(m.groupe.id), nom: m.groupe.nom ?? 'Groupe' } : undefined,
+      })) as any;
+      setMedicaments(mapped);
+      setTotalPages(Math.max(1, Math.ceil(mapped.length / 8)));
       setAfficherModal(false);
-    } catch (error) {
-      console.error('Erreur lors de la création:', error);
+    } catch (error: any) {
+      console.error('[MEDICAMENT/CREATE] error', {
+        message: error?.message,
+        status: error?.status,
+        url: error?.url,
+        method: error?.method,
+        payload: error?.payload,
+        errors: error?.errors,
+      });
+      alert(`Erreur lors de la création: ${error?.message || 'Inconnue'}`);
     }
   };
 
-  const gererVoirDetails = (_idMedicament: string) => {
+  const gererVoirDetails = (idMedicament: string) => {
+    try {
+      localStorage.setItem('medicament_id_selectionne', String(idMedicament));
+    } catch {}
     onNaviguer('details-medicament');
   };
 
@@ -179,8 +240,9 @@ const PageMedicaments: React.FC<PropsPageMedicaments> = ({ onNaviguer }) => {
                 className="group-filter-fadj"
               >
                 <option value="">Sélectionnez un groupe</option>
-                <option value="1">Médecine générique</option>
-                <option value="2">Diabète</option>
+                {(groupes || []).map(g => (
+                  <option key={g.id} value={g.id}>{g.nom}</option>
+                ))}
               </select>
               <span className="group-filter-arrow-fadj material-icons">expand_more</span>
             </div>

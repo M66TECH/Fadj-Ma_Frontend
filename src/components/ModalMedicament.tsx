@@ -11,7 +11,6 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
     dosage: '',
     description: '',
     prix: '',
-    groupe_id: '',
     image: null as File | null
   });
 
@@ -34,6 +33,7 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
 
   const gererSoumission = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[MODAL] submit', donneesFormulaire);
     onSauvegarder(donneesFormulaire);
   };
 
@@ -116,20 +116,7 @@ const ModalMedicament: React.FC<PropsModalMedicament> = ({ onFermer, onSauvegard
               </div>
             </div>
 
-            <div className="form-group-fadj">
-              <label className="form-label-fadj">Groupe de médicament</label>
-              <select
-                name="groupe_id"
-                value={donneesFormulaire.groupe_id}
-                onChange={gererChangementInput}
-                className="form-select-fadj"
-                required
-              >
-                <option value="">Sélectionnez un groupe</option>
-                <option value="1">Médecine générique</option>
-                <option value="2">Diabète</option>
-              </select>
-            </div>
+
 
             <div className="modal-actions-fadj">
               <button type="button" onClick={onFermer} className="cancel-btn-fadj">
