@@ -80,7 +80,7 @@ const ProfilePage: React.FC<PropsProfilPage> = ({ onNaviguer }) => {
     <div className="max-w-3xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#2c3e50]">Profil</h2>
+          <h2 className="text-2xl font-bold text-[#2c3e50]">{displayName}</h2>
           <p className="text-gray-600">Consultez et modifiez vos informations de profil</p>
         </div>
         <button className="px-4 py-2 rounded border" onClick={() => onNaviguer('dashboard')}>← Retour</button>
